@@ -106,7 +106,7 @@ async def check_bonus(ref_id: str, ref_username: str, invited_count: int, db: di
                     f"🎁 Вы получили бонус за {level} приглашённых!\nВот ваша ссылка:\n{bonuses['links'][level]}"
                 )
 
-            # 🎉 За 10 — только уведомление
+            # For 10 only notification
             elif level == 10:
                 await bot.send_message(
                     ADMIN_ID,
