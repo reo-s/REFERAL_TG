@@ -13,7 +13,7 @@
 1. Python 3.10+
 2. Установите зависимости: `pip install -r requirements.txt`
 3. В файле `config.py` вставьте:
-- `API_TOKEN` — токен от BotFather
+- `API_TOKEN` — токен от @BotFather
 - `ADMIN_ID` — ваш Telegram ID (можно узнать у @userinfobot)
 
 4. Запустите бота
