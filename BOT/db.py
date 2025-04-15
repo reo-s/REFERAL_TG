@@ -44,12 +44,15 @@ async def get_user_refs(pool, user_id: int):
 
 async def get_all_referrers(pool):
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT invited_by, COUNT(*) AS count, u.username FROM users "
-            "JOIN users u ON u.user_id = invited_by "
-            "GROUP BY invited_by, u.username"
-        )
-        return [(r["invited_by"], r["username"], r["count"]) for r in rows]
+        rows = await conn.fetch("""
+            SELECT u1.user_id, u1.username, COUNT(u2.user_id) as invited_count
+            FROM users u1
+            LEFT JOIN users u2 ON u2.invited_by = u1.user_id
+            GROUP BY u1.user_id, u1.username
+            HAVING COUNT(u2.user_id) > 0
+            ORDER BY invited_count DESC
+        """)
+        return [(r["user_id"], r["username"], r["invited_count"]) for r in rows]
 
 async def add_bonus(pool, user_id: int, level: int) -> bool:
     async with pool.acquire() as conn:
