@@ -30,36 +30,43 @@ CHANNEL_LINK = "https://t.me/fleshkatrenera"
 async def handle_start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "без_username"
-    args = message.text.split()
-    ref_id = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
 
-    if ref_id == user_id:
-        ref_id = None
-        
-    member = await bot.get_chat_member(chat_id="@fleshkatrenera", user_id=user_id)
-    if member.status not in ("member", "administrator", "creator"):
-        await message.answer("❗ Подпишись на канал: https://t.me/fleshkatrenera\n\nПосле этого снова нажми /start")
+    args = message.text.split()
+    ref_id = None
+
+    # если есть рефка
+    if len(args) > 1 and args[1].isdigit():
+        ref_id_candidate = int(args[1])
+        if ref_id_candidate != user_id:
+            ref_id = ref_id_candidate
+
+    # проверка подписки
+    try:
+        member = await bot.get_chat_member(chat_id="@fleshkatrenera", user_id=user_id)
+        if member.status not in ("member", "administrator", "creator"):
+            await message.answer("❗ Подпишитесь на канал:\nhttps://t.me/fleshkatrenera\n\nЗатем снова нажмите /start")
+            return
+    except Exception:
+        await message.answer("⚠️ Ошибка при проверке подписки. Повторите позже.")
         return
 
+    # сохраняем пользователя (всё делается внутри save_user)
     await save_user(pool, user_id, username, ref_id)
 
+    # пробуем начислить бонус
     if ref_id:
         invited_users = await get_user_refs(pool, ref_id)
         invited_count = len(invited_users)
-        await check_bonus(ref_id, username, invited_count)
 
-    await message.answer("🎉 Ты в системе. /invite чтобы получить ссылку.")
+        ref_user = await bot.get_chat(ref_id)
+        ref_username = ref_user.username or "без_username"
 
-
-@dp.message(Command("invite"))
-async def handle_invite(message: types.Message):
-    user_id = message.from_user.id
-    bot_username = (await bot.get_me()).username
-    ref_link = f"https://t.me/{bot_username}?start={user_id}"
+        await check_bonus(ref_id, ref_username, invited_count)
 
     await message.answer(
-        f"👋 Вот твоя реферальная ссылка: {ref_link}\n"
-        "📢 Поделись ею с друзьями и получай бонусы за приглашения!"
+        "🎉 Вы успешно зарегистрированы!\n"
+        "📢 Канал: https://t.me/fleshkatrenera\n"
+        "🔗 Ваша ссылка: /invite"
     )
 
 
