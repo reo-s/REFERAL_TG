@@ -36,15 +36,12 @@ async def handle_start(message: types.Message):
     if ref_id == user_id:
         ref_id = None
 
-    await save_user(pool, user_id, username, ref_id)
-
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        if member.status not in ("member", "administrator", "creator"):
-            raise ValueError("Not subscribed")
-    except:
-        await message.answer(f"❗ Вы ещё не подписались на канал:\n{CHANNEL_LINK}")
+    member = await bot.get_chat_member(chat_id="@fleshkatrenera", user_id=user_id)
+    if member.status not in ("member", "administrator", "creator"):
+        await message.answer("❗ Вы ещё не подписались на канал:\nhttps://t.me/fleshkatrenera")
         return
+
+    await save_user(pool, user_id, username, ref_id)
 
     if ref_id:
         invited_users = await get_user_refs(pool, ref_id)
@@ -52,8 +49,9 @@ async def handle_start(message: types.Message):
         await check_bonus(ref_id, username, invited_count)
 
     await message.answer(
-        "🎉 Вы успешно зарегистрированы в системе!\n"
-        "Чтобы получить вашу реферальную ссылку, используйте команду /invite"
+        "🎉 Вы успешно зарегистрированы!\n"
+        "📢 Канал: https://t.me/fleshkatrenera\n"
+        "🔗 Ваша ссылка: /invite"
     )
 
 
