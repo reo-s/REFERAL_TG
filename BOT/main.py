@@ -107,6 +107,22 @@ async def handle_allrefs(message: types.Message):
     await message.answer(result, parse_mode="HTML")
 
 
+# async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
+#     for level in bonuses["levels"]:
+#         if invited_count >= level:
+#             granted = await add_bonus(pool, ref_id, level)
+#             if granted:
+#                 if level in bonuses["links"]:
+#                     await bot.send_message(
+#                         ref_id,
+#                         f"🎁 Вы получили бонус за {level} приглашённых!\n"
+#                         f"Вот ваша ссылка: {bonuses['links'][level]}"
+#                     )
+#                 elif level == 10:
+#                     await bot.send_message(
+#                         ADMIN_ID,
+#                         f"🎉 Пользователь @{ref_username} (ID: {ref_id}) пригласил 10 человек!"
+#                     )
 async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
     for level in bonuses["levels"]:
         if invited_count >= level:
