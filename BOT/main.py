@@ -39,7 +39,7 @@ async def handle_start(message: types.Message):
     bot_username = (await bot.get_me()).username
     await message.answer(
         f"👋 Привет! Вот твоя реферальная ссылка:\n"
-        f"https://t.me/{bot_username}?start={user_id}"
+        f"https://t.me/fleshkatrenera?start={user_id}"
     )
 
 async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
