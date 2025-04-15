@@ -48,7 +48,7 @@ async def get_all_referrers(pool):
             SELECT u.user_id, u.username, COUNT(i.user_id)
             FROM users u
             LEFT JOIN users i ON u.user_id = i.invited_by
-            WHERE invited_by IS NOT NULL
+            WHERE i.invited_by IS NOT NULL
             GROUP BY u.user_id, u.username
         """)
         return [(r["user_id"], r["username"], r["count"]) for r in rows]
