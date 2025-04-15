@@ -18,15 +18,22 @@ async def setup_db(pool):
 
 async def save_user(pool, user_id: int, username: str, invited_by: int = None):
     async with pool.acquire() as conn:
+        # вставка если нового нет
         await conn.execute(
             """
             INSERT INTO users (user_id, username, invited_by, bonuses_sent)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT (user_id) DO UPDATE
-                SET username = EXCLUDED.username
+            ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username
             """,
             user_id, username, invited_by, []
         )
+
+        # если invited_by передан, но не установлен — установим
+        if invited_by is not None:
+            await conn.execute(
+                "UPDATE users SET invited_by = $1 WHERE user_id = $2 AND invited_by IS NULL",
+                invited_by, user_id
+            )
 
 async def get_user_refs(pool, user_id: int):
     async with pool.acquire() as conn:
