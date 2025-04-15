@@ -42,10 +42,13 @@ async def handle_start(message: types.Message):
         await check_bonus(ref_id, username, invited_count)
 
     await message.answer(
-        "🎉 Вы успешно зарегистрированы в системе!\n"
-        "📢 Подпишитесь на канал: https://t.me/fleshkatrenera\n\n"
+        "🎉 Вы успешно зарегистрированы в системе!
+"
+        "📢 Подпишитесь на канал: https://t.me/fleshkatrenera
+
+"
         "Чтобы получить вашу реферальную ссылку, используйте команду /invite"
-)
+    )
 
 @dp.message(Command("invite"))
 async def handle_invite(message: types.Message):
@@ -58,7 +61,7 @@ async def handle_invite(message: types.Message):
 {ref_link}
 
 "
-        f"📢 Поделись ею с друзьями и получай бонусы за приглашения!"
+        "📢 Поделись ею с друзьями и получай бонусы за приглашения!"
     )
 
 async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
@@ -70,7 +73,8 @@ async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
                     await bot.send_message(
                         ref_id,
                         f"🎁 Вы получили бонус за {level} приглашённых!
-Вот ваша ссылка:
+"
+                        f"Вот ваша ссылка:
 {bonuses['links'][level]}"
                     )
                 elif level == 10:
@@ -88,11 +92,14 @@ async def handle_myrefs(message: types.Message):
         await message.answer("Вы пока никого не пригласили.")
         return
 
-    result = f"Вы пригласили {len(invited_users)} человек(а):\n\n"
+    result = f"Вы пригласили {len(invited_users)} человек(а):
+
+"
     for uid, uname in invited_users:
         name_display = f"@{uname}" if uname else "пользователь"
         mention = f"<a href='tg://user?id={uid}'>{name_display}</a> (ID: {uid})"
-        result += f"— {mention}\n"
+        result += f"— {mention}
+"
 
     await message.answer(result, parse_mode="HTML")
 
@@ -107,11 +114,14 @@ async def handle_allrefs(message: types.Message):
         await message.answer("❌ Пока никто никого не пригласил.")
         return
 
-    result = "👥 Список активных рефералов:\n\n"
+    result = "👥 Список активных рефералов:
+
+"
     for uid, uname, count in referrers:
         name_display = f"@{uname}" if uname else "пользователь"
         mention = f"<a href='tg://user?id={uid}'>{name_display}</a>"
-        result += f"— {mention} (ID: {uid}) — пригласил: {count} чел.\n"
+        result += f"— {mention} (ID: {uid}) — пригласил: {count} чел.
+"
 
     await message.answer(result, parse_mode="HTML")
 
