@@ -35,10 +35,10 @@ async def handle_start(message: types.Message):
 
     if ref_id == user_id:
         ref_id = None
-
+        
     member = await bot.get_chat_member(chat_id="@fleshkatrenera", user_id=user_id)
     if member.status not in ("member", "administrator", "creator"):
-        await message.answer("❗ Вы ещё не подписались на канал:\nhttps://t.me/fleshkatrenera")
+        await message.answer("❗ Подпишись на канал: https://t.me/fleshkatrenera\n\nПосле этого снова нажми /start")
         return
 
     await save_user(pool, user_id, username, ref_id)
@@ -48,11 +48,7 @@ async def handle_start(message: types.Message):
         invited_count = len(invited_users)
         await check_bonus(ref_id, username, invited_count)
 
-    await message.answer(
-        "🎉 Вы успешно зарегистрированы!\n"
-        "📢 Канал: https://t.me/fleshkatrenera\n"
-        "🔗 Ваша ссылка: /invite"
-    )
+    await message.answer("🎉 Ты в системе. /invite чтобы получить ссылку.")
 
 
 @dp.message(Command("invite"))
