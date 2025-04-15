@@ -22,12 +22,17 @@ bonuses = {
     }
 }
 
+CHANNEL_USERNAME = "fleshkatrenera"
+
 @dp.message(Command("start"))
 async def handle_start(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "без_username"
     args = message.text.split()
-    ref_id = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) != user_id else None
+    ref_id = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
+
+    if ref_id == user_id:
+        ref_id = None
 
     await save_user(pool, user_id, username, ref_id)
 
@@ -36,10 +41,27 @@ async def handle_start(message: types.Message):
         invited_count = len(invited_users)
         await check_bonus(ref_id, username, invited_count)
 
-    bot_username = (await bot.get_me()).username
     await message.answer(
-        f"👋 Привет! Вот твоя реферальная ссылка:\n"
-        f"https://t.me/fleshkatrenera?start={user_id}"
+        "🎉 Вы успешно зарегистрированы в системе!
+"
+        "📢 Подпишитесь на канал: https://t.me/fleshkatrenera
+
+"
+        "Чтобы получить вашу реферальную ссылку, используйте команду /invite"
+    )
+
+@dp.message(Command("invite"))
+async def handle_invite(message: types.Message):
+    user_id = message.from_user.id
+    bot_username = (await bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start={user_id}"
+
+    await message.answer(
+        f"👋 Вот твоя реферальная ссылка:
+{ref_link}
+
+"
+        f"📢 Поделись ею с друзьями и получай бонусы за приглашения!"
     )
 
 async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
@@ -50,7 +72,9 @@ async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
                 if level in bonuses["links"]:
                     await bot.send_message(
                         ref_id,
-                        f"🎁 Вы получили бонус за {level} приглашённых!\nВот ваша ссылка:\n{bonuses['links'][level]}"
+                        f"🎁 Вы получили бонус за {level} приглашённых!
+Вот ваша ссылка:
+{bonuses['links'][level]}"
                     )
                 elif level == 10:
                     await bot.send_message(
