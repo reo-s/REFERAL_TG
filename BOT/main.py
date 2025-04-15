@@ -69,6 +69,17 @@ async def handle_start(message: types.Message):
         "🔗 Ваша ссылка: /invite"
     )
 
+@dp.message(Command("invite"))
+async def handle_invite(message: types.Message):
+    user_id = message.from_user.id
+    bot_info = await bot.get_me()
+    bot_username = bot_info.username
+    ref_link = f"https://t.me/{bot_username}?start={user_id}"
+
+    await message.answer(
+        f"👋 Вот твоя реферальная ссылка:\n{ref_link}\n"
+        f"📢 Поделись ею с друзьями и получай бонусы за приглашения!"
+    )
 
 @dp.message(Command("myrefs"))
 async def handle_myrefs(message: types.Message):
@@ -111,7 +122,7 @@ async def handle_allrefs(message: types.Message):
 # async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
 #     for level in bonuses["levels"]:
 #         if invited_count >= level:
-#             granted = await add_bonus(pool, ref_id, level)
+#             granted = await add_bonus(pool, ref_id, level)а 
 #             if granted:
 #                 if level in bonuses["links"]:
 #                     await bot.send_message(
