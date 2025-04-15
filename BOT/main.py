@@ -41,6 +41,7 @@ async def handle_start(message: types.Message):
             is_subscribed = True
         else:
             await message.answer("❗️Вы ещё не подписались на канал:\nhttps://t.me/fleshkatrenera")
+            return
     except Exception:
         await message.answer("⚠️ Ошибка при проверке подписки. Попробуйте позже.")
 
