@@ -62,7 +62,7 @@ async def on_confirm_sub(call: CallbackQuery):
     # проверяем подписку
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-    except Exception as e:
+    except:
         return await call.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
 
     if member.status not in (
@@ -72,20 +72,33 @@ async def on_confirm_sub(call: CallbackQuery):
     ):
         return await call.answer("⚠️ Вы ещё не подписались на канал.", show_alert=True)
 
-    # получаем inviter
+    # узнаём, кто пригласил
     inviter = await get_inviter(pool, user_id)
     if inviter is None:
-        # inviter не найден — просто убираем кнопку
         await call.answer("✅ Подписка подтверждена!", show_alert=True)
         return await call.message.edit_reply_markup()
 
-    # считаем, сколько рефералов подписались
+    # сколько подписавшихся у пригласившего
     refs = await get_user_refs(pool, inviter)
+
+    # пробегаем по уровням
     for lvl in bonuses["levels"]:
         if len(refs) >= lvl:
-            # пытаемся начислить бонус
             granted = await add_bonus(pool, inviter, lvl)
-            if granted:
+            if not granted:
+                continue
+
+            # уровень 10 — уведомляем админа
+            if lvl == 10:
+                # получим юзернейм пригласившего
+                inviter_chat = await bot.get_chat(inviter)
+                inv_name = inviter_chat.username or inviter_chat.full_name
+                await bot.send_message(
+                    ADMIN_ID,
+                    f"🎉 Пользователь @{inv_name} (ID: {inviter}) достиг 10 приглашённых!"
+                )
+            else:
+                # для остальных уровней шлём ссылку пригласившему
                 link = bonuses["links"].get(lvl, "")
                 await bot.send_message(
                     inviter,
@@ -93,7 +106,50 @@ async def on_confirm_sub(call: CallbackQuery):
                 )
 
     await call.answer("✅ Подписка подтверждена!", show_alert=True)
-    await call.message.edit_reply_markup()
+    await call.message.edit_reply_markup()  # убираем кнопку
+
+# @dp.callback_query()
+# async def on_confirm_sub(call: CallbackQuery):
+#     if not call.data or not call.data.startswith("confirm_sub:"):
+#         return
+
+#     user_id = int(call.data.split(":", 1)[1])
+
+#     # проверяем подписку
+#     try:
+#         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+#     except Exception as e:
+#         return await call.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
+
+#     if member.status not in (
+#         ChatMemberStatus.MEMBER,
+#         ChatMemberStatus.ADMINISTRATOR,
+#         ChatMemberStatus.CREATOR
+#     ):
+#         return await call.answer("⚠️ Вы ещё не подписались на канал.", show_alert=True)
+
+#     # получаем inviter
+#     inviter = await get_inviter(pool, user_id)
+#     if inviter is None:
+#         # inviter не найден — просто убираем кнопку
+#         await call.answer("✅ Подписка подтверждена!", show_alert=True)
+#         return await call.message.edit_reply_markup()
+
+#     # считаем, сколько рефералов подписались
+#     refs = await get_user_refs(pool, inviter)
+#     for lvl in bonuses["levels"]:
+#         if len(refs) >= lvl:
+#             # пытаемся начислить бонус
+#             granted = await add_bonus(pool, inviter, lvl)
+#             if granted:
+#                 link = bonuses["links"].get(lvl, "")
+#                 await bot.send_message(
+#                     inviter,
+#                     f"🎁 Бонус за {lvl} приглашённых!\n{link}"
+#                 )
+
+#     await call.answer("✅ Подписка подтверждена!", show_alert=True)
+#     await call.message.edit_reply_markup()
 
 
 @dp.message(Command("invite"))
