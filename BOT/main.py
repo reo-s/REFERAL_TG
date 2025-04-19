@@ -1,18 +1,23 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
+import asyncio
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.enums import ChatMemberStatus
 from aiogram.filters import Command
 from aiogram.types import ChatMemberUpdated
-from aiogram import F
+
 from config import API_TOKEN, ADMIN_ID
-from db import create_pool, setup_db, save_user, add_bonus, get_user_refs, get_all_referrers
+from db import (
+    create_pool, setup_db,
+    save_user, save_invite_link,
+    add_bonus, get_user_refs,
+    get_all_referrers, get_inviter_by_link
+)
 
-import asyncio
-
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+bot = Bot(token=API_TOKEN, parse_mode="HTML")
+dp = Dispatcher()
 pool = None
 
+CHANNEL_ID   = -1001182955252               # твой канал
+CHANNEL_LINK = "https://t.me/fleshkatrenera"
 bonuses = {
     "levels": [1, 3, 5, 10],
     "links": {
@@ -22,136 +27,77 @@ bonuses = {
     }
 }
 
-CHANNEL_ID = -1001182955252
-CHANNEL_LINK = "https://t.me/fleshkatrenera"
-
-
-@dp.message(Command("start"))
-async def handle_start(message: types.Message):
-    user_id = message.from_user.id
-    username = message.from_user.username or "без_username"
-
-    args = message.text.split()
-    ref_id = None
-
-    # если есть рефка
-    if len(args) > 1 and args[1].isdigit():
-        ref_id_candidate = int(args[1])
-        if ref_id_candidate != user_id:
-            ref_id = ref_id_candidate
-
-    # проверка подписки
-    try:
-        member = await bot.get_chat_member(chat_id="@fleshkatrenera", user_id=user_id)
-        if member.status not in ("member", "administrator", "creator"):
-            await message.answer("❗ Подпишитесь на канал:\nhttps://t.me/fleshkatrenera\n\nЗатем снова нажмите /start")
-            return
-    except Exception:
-        await message.answer("⚠️ Ошибка при проверке подписки. Повторите позже.")
-        return
-
-    # сохраняем пользователя (всё делается внутри save_user)
-    await save_user(pool, user_id, username, ref_id)
-
-    # пробуем начислить бонус
-    if ref_id:
-        invited_users = await get_user_refs(pool, ref_id)
-        invited_count = len(invited_users)
-
-        ref_user = await bot.get_chat(ref_id)
-        ref_username = ref_user.username or "без_username"
-
-        await check_bonus(ref_id, ref_username, invited_count)
-
-    await message.answer(
-        "🎉 Вы успешно зарегистрированы!\n"
-        "📢 Канал: https://t.me/fleshkatrenera\n"
-        "🔗 Ваша ссылка: /invite"
-    )
-
 @dp.message(Command("invite"))
-async def handle_invite(message: types.Message):
-    user_id = message.from_user.id
-    bot_info = await bot.get_me()
-    bot_username = bot_info.username
-    ref_link = f"https://t.me/{bot_username}?start={user_id}"
+async def cmd_invite(message: types.Message):
+    inviter = message.from_user.id
+    # создаём персональную ссылку
+    link_obj = await bot.create_chat_invite_link(
+        chat_id=CHANNEL_ID,
+        name=str(inviter),      # сохраняем inviter_id в name
+        expire_date=None,
+        member_limit=None
+    )
+    link = link_obj.invite_link
+
+    # сохраняем в БД
+    await save_invite_link(pool, link, inviter)
 
     await message.answer(
-        f"👋 Вот твоя реферальная ссылка:\n{ref_link}\n"
-        f"📢 Поделись ею с друзьями и получай бонусы за приглашения!"
+        f"🔗 Ваша персональная ссылка‑приглашение:\n{link}\n\n"
+        "Попросите друзей подписаться сразу по ней!"
     )
+
+@dp.chat_member(ChatMemberUpdated.filter(F.chat.id == CHANNEL_ID))
+async def on_channel_join(evt: ChatMemberUpdated):
+    old, new = evt.old_chat_member, evt.new_chat_member
+    # только новые подписки
+    if old.status in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED) \
+       and new.status == ChatMemberStatus.MEMBER:
+
+        user = new.user
+        username = user.username or "без_username"
+
+        # узнаём, по какой ссылке пришёл
+        inv_link = evt.invite_link.invite_link if evt.invite_link else None
+        inviter = await get_inviter_by_link(pool, inv_link) if inv_link else None
+
+        # сохраняем P2 в таблице users
+        await save_user(pool, user.id, username, inviter)
+
+        # начисляем бонус P1
+        if inviter:
+            refs = await get_user_refs(pool, inviter)
+            for lvl in bonuses["levels"]:
+                if len(refs) >= lvl:
+                    granted = await add_bonus(pool, inviter, lvl)
+                    if granted:
+                        text = (f"🎁 Бонус за {lvl} приглашённых:\n"
+                                f"{bonuses['links'].get(lvl,'')}")
+                        await bot.send_message(inviter, text)
+
 
 @dp.message(Command("myrefs"))
 async def handle_myrefs(message: types.Message):
-    user_id = message.from_user.id
-    invited_users = await get_user_refs(pool, user_id)
-
-    if not invited_users:
-        await message.answer("Вы пока никого не пригласили.")
-        return
-
-    result = f"Вы пригласили {len(invited_users)} человек(а):\n"
-    for uid, uname in invited_users:
-        name_display = f"@{uname}" if uname else "пользователь"
-        mention = f"<a href='tg://user?id={uid}'>{name_display}</a> (ID: {uid})"
-        result += f"— {mention}\n"
-
-    await message.answer(result, parse_mode="HTML")
-
+    uid = message.from_user.id
+    refs = await get_user_refs(pool, uid)
+    if not refs:
+        return await message.answer("Вы пока никого не пригласили.")
+    text = f"Вы пригласили {len(refs)} человек(а):\n"
+    for r_uid, r_uname in refs:
+        text += f"— <a href='tg://user?id={r_uid}'>@{r_uname or 'user'}</a>\n"
+    await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("allrefs"))
 async def handle_allrefs(message: types.Message):
     if message.from_user.id != ADMIN_ID:
-        await message.answer("⛔ Эта команда только для администратора.")
-        return
-
-    referrers = await get_all_referrers(pool)
-    if not referrers:
-        await message.answer("❌ Пока никто никого не пригласил.")
-        return
-
-    result = "👥 Список активных рефералов:\n"
-    for uid, uname, count in referrers:
-        name_display = f"@{uname}" if uname else "пользователь"
-        mention = f"<a href='tg://user?id={uid}'>{name_display}</a>"
-        result += f"— {mention} (ID: {uid}) — пригласил: {count} чел.\n"
-
-    await message.answer(result, parse_mode="HTML")
-
-
-# async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
-#     for level in bonuses["levels"]:
-#         if invited_count >= level:
-#             granted = await add_bonus(pool, ref_id, level)а 
-#             if granted:
-#                 if level in bonuses["links"]:
-#                     await bot.send_message(
-#                         ref_id,
-#                         f"🎁 Вы получили бонус за {level} приглашённых!\n"
-#                         f"Вот ваша ссылка: {bonuses['links'][level]}"
-#                     )
-#                 elif level == 10:
-#                     await bot.send_message(
-#                         ADMIN_ID,
-#                         f"🎉 Пользователь @{ref_username} (ID: {ref_id}) пригласил 10 человек!"
-#                     )
-async def check_bonus(ref_id: int, ref_username: str, invited_count: int):
-    for level in bonuses["levels"]:
-        if invited_count >= level:
-            granted = await add_bonus(pool, ref_id, level)
-            if granted:
-                if level in bonuses["links"]:
-                    await bot.send_message(
-                        ref_id,
-                        f"🎁 Вы получили бонус за {level} приглашённых!\n"
-                        f"Вот ваша ссылка: {bonuses['links'][level]}"
-                    )
-                elif level == 10:
-                    await bot.send_message(
-                        ADMIN_ID,
-                        f"🎉 Пользователь @{ref_username} (ID: {ref_id}) пригласил 10 человек!"
-                    )
-
+        return await message.answer("⛔ Только админ.")
+    rows = await get_all_referrers(pool)
+    if not rows:
+        return await message.answer("❌ Никто ещё никого не пригласил.")
+    text = "👥 Список рефереров:\n"
+    for uid, uname, cnt in rows:
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\n"
+    await message.answer(text, parse_mode="HTML")
 
 async def main():
     global pool
