@@ -1,23 +1,22 @@
 import asyncio
-from aiogram import Bot, Dispatcher
-from aiogram.enums import ChatMemberStatus
-from aiogram.filters import Command
-from aiogram.types import ChatMemberUpdated
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode, ChatMemberStatus
+from aiogram.filters import Command, Text
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import API_TOKEN, ADMIN_ID
 from db import (
     create_pool, setup_db,
-    save_user, save_invite_link,
-    add_bonus, get_user_refs,
-    get_all_referrers, get_inviter_by_link
+    save_user, get_user_refs,
+    add_bonus, get_inviter, get_all_referrers
 )
 
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 pool = None
 
 CHANNEL_ID   = -1001182955252
-CHANNEL_LINK = "https://t.me/fleshkatrenera"
+CHANNEL_URL  = "https://t.me/fleshkatrenera"
 bonuses = {
     "levels": [1, 3, 5, 10],
     "links": {
@@ -27,63 +26,85 @@ bonuses = {
     }
 }
 
-@dp.message(Command("invite"))
-async def cmd_invite(message):
-    inviter = message.from_user.id
-    link_obj = await bot.create_chat_invite_link(
-        chat_id=CHANNEL_ID,
-        name=str(inviter),
-        expire_date=None,
-        member_limit=None
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user_id  = message.from_user.id
+    username = message.from_user.username or "без_username"
+
+    # парсим ref_id из /start 12345
+    parts = message.text.split()
+    ref_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) != user_id else None
+
+    # сохраняем сразу
+    await save_user(pool, user_id, username, ref_id)
+
+    # клавиатура с кнопкой "Я подписался"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ Я подписался", callback_data=f"confirm_sub:{user_id}")
+        ]]
     )
-    link = link_obj.invite_link
-    await save_invite_link(pool, link, inviter)
+
     await message.answer(
-        f"🔗 Ваша персональная ссылка:\n{link}\n\n"
-        "Попросите друга подписаться сразу по ней!"
+        f"👋 Привет, @{username}!\n\n"
+        f"Чтобы завершить регистрацию, подпишитесь на канал:\n{CHANNEL_URL}",
+        reply_markup=kb
     )
 
-@dp.chat_member()
-async def on_channel_join(event: ChatMemberUpdated):
-    # интересуют только новые подписки в наш канал
-    if event.chat.id != CHANNEL_ID:
-        return
 
-    old, new = event.old_chat_member, event.new_chat_member
-    if old.status in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED) \
-       and new.status == ChatMemberStatus.MEMBER:
+@dp.callback_query(Text(startswith="confirm_sub:"))
+async def on_confirm_sub(call: types.CallbackQuery):
+    user_id = int(call.data.split(":", 1)[1])
 
-        user = new.user
-        inviter = await get_inviter_by_link(pool, event.invite_link.invite_link) \
-                  if event.invite_link else None
+    # проверяем подписку
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+    except:
+        return await call.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
 
-        # сохраняем P2
-        await save_user(pool, user.id, user.username or "без_username", inviter)
+    if member.status not in (ChatMemberStatus.MEMBER, ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR):
+        return await call.answer("⚠️ Вы ещё не подписались на канал.", show_alert=True)
 
-        # начисляем бонус P1
-        if inviter:
-            refs = await get_user_refs(pool, inviter)
-            for lvl in bonuses["levels"]:
-                if len(refs) >= lvl:
-                    granted = await add_bonus(pool, inviter, lvl)
-                    if granted:
-                        text = (f"🎁 Бонус за {lvl} приглашённых:\n"
-                                f"{bonuses['links'].get(lvl,'')}")
-                        await bot.send_message(inviter, text)
+    # получили подписку — начисляем бонус пригласившему
+    inviter = await get_inviter(pool, user_id)
+    if inviter:
+        refs = await get_user_refs(pool, inviter)
+        for lvl in bonuses["levels"]:
+            if len(refs) >= lvl and await add_bonus(pool, inviter, lvl):
+                link = bonuses["links"].get(lvl, "")
+                await bot.send_message(
+                    inviter,
+                    f"🎁 Бонус за {lvl} приглашённых!\n{link}"
+                )
+
+    await call.answer("✅ Подписка подтверждена! Спасибо.", show_alert=True)
+    # убрать кнопку
+    await call.message.edit_reply_markup(reply_markup=None)
+
+
+@dp.message(Command("invite"))
+async def cmd_invite(message: types.Message):
+    user_id = message.from_user.id
+    bot_username = (await bot.get_me()).username
+    link = f"https://t.me/{bot_username}?start={user_id}"
+    await message.answer(f"🔗 Твоя реферальная ссылка:\n{link}")
+
 
 @dp.message(Command("myrefs"))
-async def handle_myrefs(message):
-    uid = message.from_user.id
-    refs = await get_user_refs(pool, uid)
+async def cmd_myrefs(message: types.Message):
+    user_id = message.from_user.id
+    refs = await get_user_refs(pool, user_id)
     if not refs:
         return await message.answer("Вы пока никого не пригласили.")
     text = f"Вы пригласили {len(refs)} человек(а):\n"
-    for r_uid, r_uname in refs:
-        text += f"— <a href='tg://user?id={r_uid}'>@{r_uname or 'user'}</a>\n"
+    for uid, uname in refs:
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a>\n"
     await message.answer(text, parse_mode="HTML")
 
+
 @dp.message(Command("allrefs"))
-async def handle_allrefs(message):
+async def cmd_allrefs(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return await message.answer("⛔ Только админ.")
     rows = await get_all_referrers(pool)
@@ -94,11 +115,13 @@ async def handle_allrefs(message):
         text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\n"
     await message.answer(text, parse_mode="HTML")
 
+
 async def main():
     global pool
     pool = await create_pool()
     await setup_db(pool)
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
