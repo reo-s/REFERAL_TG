@@ -55,27 +55,40 @@ async def get_all_referrers(pool):
 
 async def add_bonus(pool, user_id: int, level: int) -> bool:
     async with pool.acquire() as conn:
-        # Получаем текущее значение
+        # Попытка прочитать строку пользователя
         row = await conn.fetchrow(
             "SELECT bonuses_sent FROM users WHERE user_id = $1", user_id
         )
-        bonuses = row["bonuses_sent"] or []
+        print(f"[add_bonus] fetched row for user={user_id}: {row!r}")
 
-        # Если уже есть — выходим
-        if level in bonuses:
+        # Если пользователя нет в таблице — прекращаем
+        if row is None:
+            print(f"[add_bonus] user {user_id} not found → abort")
             return False
 
-        # Добавляем и сохраняем
-        bonuses.append(level)
+        # Извлекаем текущий массив бонусов (или пустой)
+        current = row.get("bonuses_sent") or []
+        print(f"[add_bonus] current bonuses for user={user_id}: {current}")
+
+        # Если уже есть этот уровень — ничего не делаем
+        if level in current:
+            print(f"[add_bonus] level={level} already granted → abort")
+            return False
+
+        # Добавляем новый уровень и сохраняем
+        new_list = current + [level]
+        print(f"[add_bonus] updating bonuses for user={user_id}: {new_list}")
         await conn.execute(
             "UPDATE users SET bonuses_sent = $1 WHERE user_id = $2",
-            bonuses, user_id
+            new_list, user_id
         )
-        # Для отладки: убедимся, что в БД теперь массив с добавленным уровнем
-        new_row = await conn.fetchrow(
+
+        # Проверяем результат
+        row2 = await conn.fetchrow(
             "SELECT bonuses_sent FROM users WHERE user_id = $1", user_id
         )
-        print(f"[add_bonus] user={user_id} levels before append, after append: {row['bonuses_sent']} → {new_row['bonuses_sent']}")
+        print(f"[add_bonus] after update, row2={row2!r}")
+
         return True
 
 async def get_inviter(pool, user_id: int) -> int | None:
