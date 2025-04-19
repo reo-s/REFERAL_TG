@@ -1,22 +1,21 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode, ChatMemberStatus
-from aiogram.filters import Command, Text
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
 from config import API_TOKEN, ADMIN_ID
 from db import (
-    create_pool, setup_db,
-    save_user, get_user_refs,
-    add_bonus, get_inviter, get_all_referrers
+    create_pool, setup_db, save_user,
+    get_user_refs, add_bonus, get_inviter
 )
 
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 pool = None
 
-CHANNEL_ID   = -1001182955252
-CHANNEL_URL  = "https://t.me/fleshkatrenera"
+CHANNEL_ID  = -1001182955252
+CHANNEL_URL = "https://t.me/fleshkatrenera"
 bonuses = {
     "levels": [1, 3, 5, 10],
     "links": {
@@ -32,29 +31,33 @@ async def cmd_start(message: types.Message):
     user_id  = message.from_user.id
     username = message.from_user.username or "без_username"
 
-    # парсим ref_id из /start 12345
+    # парсим /start 12345
     parts = message.text.split()
     ref_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) != user_id else None
 
-    # сохраняем сразу
+    # сохраняем P2 (invited_by запишется только если раньше не было)
     await save_user(pool, user_id, username, ref_id)
 
-    # клавиатура с кнопкой "Я подписался"
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[
-            InlineKeyboardButton(text="✅ Я подписался", callback_data=f"confirm_sub:{user_id}")
-        ]]
+    # шлём P2 ссылку на канал + кнопку «Я подписался»
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton(
+            text="✅ Я подписался",
+            callback_data=f"confirm_sub:{user_id}"
+        )
     )
-
     await message.answer(
         f"👋 Привет, @{username}!\n\n"
-        f"Чтобы завершить регистрацию, подпишитесь на канал:\n{CHANNEL_URL}",
+        f"Подпишитесь на канал:\n{CHANNEL_URL}\n\n"
+        "Когда подпишетесь — нажмите кнопку ниже:",
         reply_markup=kb
     )
 
 
-@dp.callback_query(Text(startswith="confirm_sub:"))
-async def on_confirm_sub(call: types.CallbackQuery):
+@dp.callback_query()
+async def on_confirm_sub(call: CallbackQuery):
+    if not call.data or not call.data.startswith("confirm_sub:"):
+        return  # ignore other callbacks
+
     user_id = int(call.data.split(":", 1)[1])
 
     # проверяем подписку
@@ -63,10 +66,14 @@ async def on_confirm_sub(call: types.CallbackQuery):
     except:
         return await call.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
 
-    if member.status not in (ChatMemberStatus.MEMBER, ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR):
+    if member.status not in (
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.CREATOR
+    ):
         return await call.answer("⚠️ Вы ещё не подписались на канал.", show_alert=True)
 
-    # получили подписку — начисляем бонус пригласившему
+    # начисляем бонус пригласившему
     inviter = await get_inviter(pool, user_id)
     if inviter:
         refs = await get_user_refs(pool, inviter)
@@ -78,16 +85,16 @@ async def on_confirm_sub(call: types.CallbackQuery):
                     f"🎁 Бонус за {lvl} приглашённых!\n{link}"
                 )
 
-    await call.answer("✅ Подписка подтверждена! Спасибо.", show_alert=True)
-    # убрать кнопку
+    await call.answer("✅ Подписка подтверждена!", show_alert=True)
+    # убираем кнопку
     await call.message.edit_reply_markup(reply_markup=None)
 
 
 @dp.message(Command("invite"))
 async def cmd_invite(message: types.Message):
     user_id = message.from_user.id
-    bot_username = (await bot.get_me()).username
-    link = f"https://t.me/{bot_username}?start={user_id}"
+    bot_info = await bot.get_me()
+    link = f"https://t.me/{bot_info.username}?start={user_id}"
     await message.answer(f"🔗 Твоя реферальная ссылка:\n{link}")
 
 
@@ -97,9 +104,9 @@ async def cmd_myrefs(message: types.Message):
     refs = await get_user_refs(pool, user_id)
     if not refs:
         return await message.answer("Вы пока никого не пригласили.")
-    text = f"Вы пригласили {len(refs)} человек(а):\n"
+    text = f"Вы пригласили {len(refs)} чел.:\\n"
     for uid, uname in refs:
-        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a>\n"
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a>\\n"
     await message.answer(text, parse_mode="HTML")
 
 
@@ -107,12 +114,12 @@ async def cmd_myrefs(message: types.Message):
 async def cmd_allrefs(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return await message.answer("⛔ Только админ.")
-    rows = await get_all_referrers(pool)
+    rows = await get_user_refs(pool, None)  # или get_all_referrers, как хочешь
     if not rows:
         return await message.answer("❌ Никто ещё никого не пригласил.")
     text = "👥 Список рефереров:\n"
     for uid, uname, cnt in rows:
-        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\n"
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\\n"
     await message.answer(text, parse_mode="HTML")
 
 
@@ -121,7 +128,6 @@ async def main():
     pool = await create_pool()
     await setup_db(pool)
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
