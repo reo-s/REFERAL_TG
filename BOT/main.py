@@ -54,15 +54,19 @@ async def cmd_start(message: types.Message):
 
 @dp.callback_query()
 async def on_confirm_sub(call: CallbackQuery):
+    # Игнорируем все коллбэки, кроме наших
     if not call.data or not call.data.startswith("confirm_sub:"):
         return
 
+    # Парсим user_id
     user_id = int(call.data.split(":", 1)[1])
+    print(f"[on_confirm_sub] received callback for user_id={user_id}")
 
-    # проверяем подписку
+    # Проверяем подписку в канале
     try:
         member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-    except:
+    except Exception as e:
+        print(f"[on_confirm_sub] get_chat_member error: {e}")
         return await call.answer("Ошибка проверки. Попробуйте позже.", show_alert=True)
 
     if member.status not in (
@@ -70,22 +74,32 @@ async def on_confirm_sub(call: CallbackQuery):
         ChatMemberStatus.ADMINISTRATOR,
         ChatMemberStatus.CREATOR
     ):
+        print(f"[on_confirm_sub] user {user_id} is not subscribed (status={member.status})")
         return await call.answer("⚠️ Вы ещё не подписались на канал.", show_alert=True)
 
-    # начисляем бонус пригласившему
+    # Получаем inviter для этого user_id
     inviter = await get_inviter(pool, user_id)
+    print(f"[on_confirm_sub] inviter for user {user_id} is {inviter}")
+
     if inviter:
         refs = await get_user_refs(pool, inviter)
         for lvl in bonuses["levels"]:
-            if len(refs) >= lvl and await add_bonus(pool, inviter, lvl):
-                link = bonuses["links"].get(lvl, "")
-                await bot.send_message(
-                    inviter,
-                    f"🎁 Бонус за {lvl} приглашённых!\n{link}"
-                )
+            if len(refs) >= lvl:
+                # Лог перед попыткой начисления
+                print(f"[check_bonus] inviter={inviter}, level={lvl}, invited_count={len(refs)}")
+                granted = await add_bonus(pool, inviter, lvl)
+                # Лог результата add_bonus
+                print(f"[add_bonus] inviter={inviter}, level={lvl}, granted={granted}")
 
+                if granted:
+                    link = bonuses["links"].get(lvl, "")
+                    await bot.send_message(
+                        inviter,
+                        f"🎁 Бонус за {lvl} приглашённых!\n{link}"
+                    )
+
+    # Подтверждаем коллбэк и убираем кнопку
     await call.answer("✅ Подписка подтверждена!", show_alert=True)
-    # убираем кнопку
     await call.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[]))
 
 
