@@ -1,5 +1,5 @@
 import asyncio
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher
 from aiogram.enums import ChatMemberStatus
 from aiogram.filters import Command
 from aiogram.types import ChatMemberUpdated
@@ -12,11 +12,11 @@ from db import (
     get_all_referrers, get_inviter_by_link
 )
 
-bot = Bot(token=API_TOKEN, parse_mode="HTML")
+bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 pool = None
 
-CHANNEL_ID   = -1001182955252               # твой канал
+CHANNEL_ID   = -1001182955252
 CHANNEL_LINK = "https://t.me/fleshkatrenera"
 bonuses = {
     "levels": [1, 3, 5, 10],
@@ -28,41 +28,37 @@ bonuses = {
 }
 
 @dp.message(Command("invite"))
-async def cmd_invite(message: types.Message):
+async def cmd_invite(message):
     inviter = message.from_user.id
-    # создаём персональную ссылку
     link_obj = await bot.create_chat_invite_link(
         chat_id=CHANNEL_ID,
-        name=str(inviter),      # сохраняем inviter_id в name
+        name=str(inviter),
         expire_date=None,
         member_limit=None
     )
     link = link_obj.invite_link
-
-    # сохраняем в БД
     await save_invite_link(pool, link, inviter)
-
     await message.answer(
-        f"🔗 Ваша персональная ссылка‑приглашение:\n{link}\n\n"
-        "Попросите друзей подписаться сразу по ней!"
+        f"🔗 Ваша персональная ссылка:\n{link}\n\n"
+        "Попросите друга подписаться сразу по ней!"
     )
 
-@dp.chat_member(ChatMemberUpdated.filter(F.chat.id == CHANNEL_ID))
-async def on_channel_join(evt: ChatMemberUpdated):
-    old, new = evt.old_chat_member, evt.new_chat_member
-    # только новые подписки
+@dp.chat_member()
+async def on_channel_join(event: ChatMemberUpdated):
+    # интересуют только новые подписки в наш канал
+    if event.chat.id != CHANNEL_ID:
+        return
+
+    old, new = event.old_chat_member, event.new_chat_member
     if old.status in (ChatMemberStatus.LEFT, ChatMemberStatus.KICKED) \
        and new.status == ChatMemberStatus.MEMBER:
 
         user = new.user
-        username = user.username or "без_username"
+        inviter = await get_inviter_by_link(pool, event.invite_link.invite_link) \
+                  if event.invite_link else None
 
-        # узнаём, по какой ссылке пришёл
-        inv_link = evt.invite_link.invite_link if evt.invite_link else None
-        inviter = await get_inviter_by_link(pool, inv_link) if inv_link else None
-
-        # сохраняем P2 в таблице users
-        await save_user(pool, user.id, username, inviter)
+        # сохраняем P2
+        await save_user(pool, user.id, user.username or "без_username", inviter)
 
         # начисляем бонус P1
         if inviter:
@@ -75,9 +71,8 @@ async def on_channel_join(evt: ChatMemberUpdated):
                                 f"{bonuses['links'].get(lvl,'')}")
                         await bot.send_message(inviter, text)
 
-
 @dp.message(Command("myrefs"))
-async def handle_myrefs(message: types.Message):
+async def handle_myrefs(message):
     uid = message.from_user.id
     refs = await get_user_refs(pool, uid)
     if not refs:
@@ -88,7 +83,7 @@ async def handle_myrefs(message: types.Message):
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("allrefs"))
-async def handle_allrefs(message: types.Message):
+async def handle_allrefs(message):
     if message.from_user.id != ADMIN_ID:
         return await message.answer("⛔ Только админ.")
     rows = await get_all_referrers(pool)
