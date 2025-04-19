@@ -55,18 +55,27 @@ async def get_all_referrers(pool):
 
 async def add_bonus(pool, user_id: int, level: int) -> bool:
     async with pool.acquire() as conn:
-        current = await conn.fetchval(
+        # Получаем текущее значение
+        row = await conn.fetchrow(
             "SELECT bonuses_sent FROM users WHERE user_id = $1", user_id
         )
-        if current is None:
-            current = []
-        if level in current:
+        bonuses = row["bonuses_sent"] or []
+
+        # Если уже есть — выходим
+        if level in bonuses:
             return False
-        current.append(level)
+
+        # Добавляем и сохраняем
+        bonuses.append(level)
         await conn.execute(
             "UPDATE users SET bonuses_sent = $1 WHERE user_id = $2",
-            current, user_id
+            bonuses, user_id
         )
+        # Для отладки: убедимся, что в БД теперь массив с добавленным уровнем
+        new_row = await conn.fetchrow(
+            "SELECT bonuses_sent FROM users WHERE user_id = $1", user_id
+        )
+        print(f"[add_bonus] user={user_id} levels before append, after append: {row['bonuses_sent']} → {new_row['bonuses_sent']}")
         return True
 
 async def get_inviter(pool, user_id: int) -> int | None:
