@@ -7,7 +7,6 @@ async def create_pool():
 
 async def setup_db(pool):
     async with pool.acquire() as conn:
-        # Таблица пользователей
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -16,38 +15,24 @@ async def setup_db(pool):
                 bonuses_sent INTEGER[]
             );
         """)
-        # Таблица персональных ссылок
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS invite_links (
-                invite_link TEXT PRIMARY KEY,
-                inviter_id BIGINT NOT NULL
-            );
-        """)
 
 async def save_user(pool, user_id: int, username: str, invited_by: int = None):
     async with pool.acquire() as conn:
-        # Вставляем или обновляем username, invited_by записываем только если пусто
         await conn.execute(
             """
             INSERT INTO users (user_id, username, invited_by, bonuses_sent)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT (user_id) DO UPDATE SET
-              username = EXCLUDED.username
+            ON CONFLICT (user_id) DO UPDATE
+              SET username = EXCLUDED.username
             """,
             user_id, username, invited_by, []
         )
+        # если впервые пришёл с рефом — установим invited_by
         if invited_by is not None:
             await conn.execute(
                 "UPDATE users SET invited_by = $1 WHERE user_id = $2 AND invited_by IS NULL",
                 invited_by, user_id
             )
-
-async def save_invite_link(pool, link: str, inviter_id: int):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO invite_links (invite_link, inviter_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            link, inviter_id
-        )
 
 async def get_user_refs(pool, ref_id: int):
     async with pool.acquire() as conn:
@@ -84,8 +69,8 @@ async def add_bonus(pool, user_id: int, level: int) -> bool:
         )
         return True
 
-async def get_inviter_by_link(pool, link: str) -> int | None:
+async def get_inviter(pool, user_id: int) -> int | None:
     async with pool.acquire() as conn:
         return await conn.fetchval(
-            "SELECT inviter_id FROM invite_links WHERE invite_link = $1", link
+            "SELECT invited_by FROM users WHERE user_id = $1", user_id
         )
