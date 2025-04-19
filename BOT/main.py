@@ -6,8 +6,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQu
 
 from config import API_TOKEN, ADMIN_ID
 from db import (
-    create_pool, setup_db, save_user,
-    get_user_refs, add_bonus, get_inviter
+    create_pool, setup_db,
+    save_user, get_user_refs,
+    add_bonus, get_inviter
 )
 
 bot = Bot(token=API_TOKEN, parse_mode=ParseMode.HTML)
@@ -35,20 +36,18 @@ async def cmd_start(message: types.Message):
     parts = message.text.split()
     ref_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() and int(parts[1]) != user_id else None
 
-    # сохраняем P2 (invited_by запишется только если раньше не было)
+    # сохраняем P2 (invited_by установится только если было None)
     await save_user(pool, user_id, username, ref_id)
 
-    # шлём P2 ссылку на канал + кнопку «Я подписался»
-    kb = InlineKeyboardMarkup().add(
-        InlineKeyboardButton(
-            text="✅ Я подписался",
-            callback_data=f"confirm_sub:{user_id}"
-        )
-    )
+    # готовим клавиатуру
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Я подписался", callback_data=f"confirm_sub:{user_id}")
+    ]])
+
     await message.answer(
         f"👋 Привет, @{username}!\n\n"
         f"Подпишитесь на канал:\n{CHANNEL_URL}\n\n"
-        "Когда подпишетесь — нажмите кнопку ниже:",
+        "После подписки нажмите кнопку ниже:",
         reply_markup=kb
     )
 
@@ -56,7 +55,7 @@ async def cmd_start(message: types.Message):
 @dp.callback_query()
 async def on_confirm_sub(call: CallbackQuery):
     if not call.data or not call.data.startswith("confirm_sub:"):
-        return  # ignore other callbacks
+        return
 
     user_id = int(call.data.split(":", 1)[1])
 
@@ -87,7 +86,7 @@ async def on_confirm_sub(call: CallbackQuery):
 
     await call.answer("✅ Подписка подтверждена!", show_alert=True)
     # убираем кнопку
-    await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[]))
 
 
 @dp.message(Command("invite"))
@@ -104,9 +103,9 @@ async def cmd_myrefs(message: types.Message):
     refs = await get_user_refs(pool, user_id)
     if not refs:
         return await message.answer("Вы пока никого не пригласили.")
-    text = f"Вы пригласили {len(refs)} чел.:\\n"
+    text = f"Вы пригласили {len(refs)} человек(а):\n"
     for uid, uname in refs:
-        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a>\\n"
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a>\n"
     await message.answer(text, parse_mode="HTML")
 
 
@@ -114,12 +113,12 @@ async def cmd_myrefs(message: types.Message):
 async def cmd_allrefs(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return await message.answer("⛔ Только админ.")
-    rows = await get_user_refs(pool, None)  # или get_all_referrers, как хочешь
+    rows = await get_user_refs(pool, None)  # или вызов get_all_referrers
     if not rows:
         return await message.answer("❌ Никто ещё никого не пригласил.")
     text = "👥 Список рефереров:\n"
     for uid, uname, cnt in rows:
-        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\\n"
+        text += f"— <a href='tg://user?id={uid}'>@{uname or 'user'}</a> — {cnt}\n"
     await message.answer(text, parse_mode="HTML")
 
 
